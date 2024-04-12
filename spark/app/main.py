@@ -1,7 +1,7 @@
 
 from typing import List
 from pyspark.sql import SparkSession, DataFrame, Row, Column
-from pyspark.sql.functions import count, avg, col, countDistinct, round as rd, desc, current_date, expr
+from pyspark.sql.functions import count, avg, col, countDistinct, round as rd, desc, current_date, expr, now
 import time
 from functools import wraps
 from pprint import pprint
@@ -27,12 +27,11 @@ def showPartitionSize(df: DataFrame):
 
 @timeit
 def q1(users: DataFrame, questions: DataFrame, answers: DataFrame, comments: DataFrame, creationDate: Column=None) -> List[Row]:
-    now = current_date()
-    creationDate = creationDate or (now - expr("INTERVAL 6 MONTHS"))
+    creationDate = creationDate or (now() - expr("INTERVAL 6 MONTHS"))
     
-    recent_questions = questions.filter((questions.CreationDate >= creationDate) & (questions.CreationDate <= now))
-    recent_answers = answers.filter((answers.CreationDate >= creationDate) & (answers.CreationDate <= now))
-    recent_comments = comments.filter((comments.CreationDate >= creationDate) & (comments.CreationDate <= now))
+    recent_questions = questions.filter((questions.CreationDate >= creationDate) & (questions.CreationDate <= now()))
+    recent_answers = answers.filter((answers.CreationDate >= creationDate) & (answers.CreationDate <= now()))
+    recent_comments = comments.filter((comments.CreationDate >= creationDate) & (comments.CreationDate <= now()))
 
     user_questions = users.join(recent_questions, users.Id == recent_questions.OwnerUserId, "left").select(users["*"], recent_questions.Id.alias("q_id"))
     user_answers = user_questions.join(recent_answers, users.Id == recent_answers.OwnerUserId, "left").select(users["*"], "q_id", recent_answers.Id.alias("a_id"))
@@ -180,11 +179,7 @@ def rows_to_tuples(rows):
 def main():
     @timeit
     def w1():
-        users.createOrReplaceTempView("users")
-        questions.createOrReplaceTempView("questions")
-        answers.createOrReplaceTempView("answers")
-        comments.createOrReplaceTempView("comments")
-        pprint(q1(users, questions, answers, comments))
+        q1(users, questions, answers, comments)
 
     @timeit
     def w2():
