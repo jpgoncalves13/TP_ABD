@@ -93,11 +93,37 @@ def q2(votes: DataFrame, votes_types: DataFrame, users: DataFrame, answers: Data
         .orderBy("year", "reputation_range").collect()
     
 @timeit
-def q3(tags: DataFrame, questions_tags: DataFrame, questions: DataFrame, answers: DataFrame, inferior_count_limit: int=None) -> List[Row]:
+def q3(tags: DataFrame, questions_tags: DataFrame, questions: DataFrame, answers: DataFrame, inferior_count_limit: int = 10) -> DataFrame:
+    # Inferior count limit
     inferior_count_limit = inferior_count_limit or 10
-    return
-        
-        
+
+    # Subquery to find tag ids with more than `inferior_count_limit` questions
+    question_counts = questions_tags.groupby('tagid').count()
+    filtered_tags = question_counts.filter(question_counts['count'] > inferior_count_limit).select('tagid')
+
+    # Filter tags
+    filtered_tags_df = tags.join(filtered_tags, tags['id'] == filtered_tags['tagid'])
+
+    # Use alias to avoid ambiguity
+    tags_questions = filtered_tags_df.alias('t').join(questions_tags.alias('qt'), F.col('t.id') == F.col('qt.tagid'))
+    tagged_questions = tags_questions.alias('tq').join(questions.alias('q'), F.col('tq.questionid') == F.col('q.id'))
+
+    # Join questions with answers and count answers per question using alias
+    tagged_questions_with_answers = tagged_questions.alias('tq').join(answers.alias('a'), F.col('tq.questionid') == F.col('a.parentid'), 'left')
+    answer_counts = tagged_questions_with_answers.groupby('tq.tagname', 'tq.questionid').count()
+
+    # Calculate average and count per tag
+    result = answer_counts.groupby('tagname').agg(
+        F.round(F.avg('count'), 3).alias('avg_total'),
+        F.count('count').alias('count')
+    )
+
+    # Order by average total descending, count descending, and tagname
+    result = result.orderBy(F.desc('avg_total'), F.desc('count'), 'tagname')
+
+    return result.collect()
+
+            
 @timeit 
 def q3_sql(spark: SparkSession):
     query = """
@@ -152,6 +178,10 @@ def q4_sql(spark: SparkSession):
     return spark.sql(query).collect()
 
 def main():
+
+    def rows_to_tuples(rows):
+        return [tuple(row.asDict().values()) for row in rows]
+
     @timeit
     def w1():
         q1(users, questions, answers, comments)
@@ -166,6 +196,17 @@ def main():
         questions_tags.createOrReplaceTempView("questionstags")
         questions.createOrReplaceTempView("questions")
         answers.createOrReplaceTempView("answers")
+        r1 = q3_sql(spark)
+        r2 = q3(tags, questions_tags, questions, answers)
+
+        set1 = set(rows_to_tuples(r1))
+        set2 = set(rows_to_tuples(r2))
+
+        diff1 = set1 - set2
+        diff2 = set2 - set1
+
+        print("Diferenças de results1 para results2:", diff1)
+        print("Diferenças de results2 para results1:", diff2)
         
     @timeit
     def w4():
