@@ -1,10 +1,11 @@
 
 from typing import List
 from pyspark.sql import SparkSession, DataFrame, Row, Column
-from pyspark.sql.functions import count, avg, col, countDistinct, round as rd, desc, current_date, expr, now
-import time
+import pyspark.sql.functions as F 
+from datetime import datetime
 from functools import wraps
 from pprint import pprint
+import time
 import sys
 
 # utility to measure the runtime of some function
@@ -27,19 +28,18 @@ def showPartitionSize(df: DataFrame):
 
 @timeit
 def q1(users: DataFrame, questions: DataFrame, answers: DataFrame, comments: DataFrame, creationDate: Column=None) -> List[Row]:
-    creationDate = creationDate or (now() - expr("INTERVAL 6 MONTHS"))
+    creationDate = creationDate or (F.now() - F.expr("INTERVAL 6 MONTHS"))
     
-    recent_questions = questions.filter((questions.CreationDate >= creationDate) & (questions.CreationDate <= now()))
-    recent_answers = answers.filter((answers.CreationDate >= creationDate) & (answers.CreationDate <= now()))
-    recent_comments = comments.filter((comments.CreationDate >= creationDate) & (comments.CreationDate <= now()))
+    recent_questions = questions.filter((questions.CreationDate >= creationDate) & (questions.CreationDate <= F.now()))
+    recent_answers = answers.filter((answers.CreationDate >= creationDate) & (answers.CreationDate <= F.now()))
+    recent_comments = comments.filter((comments.CreationDate >= creationDate) & (comments.CreationDate <= F.now()))
 
-    user_questions = users.join(recent_questions, users.Id == recent_questions.OwnerUserId, "left").select(users["*"], recent_questions.Id.alias("q_id"))
-    user_answers = user_questions.join(recent_answers, users.Id == recent_answers.OwnerUserId, "left").select(users["*"], "q_id", recent_answers.Id.alias("a_id"))
-    user_comments = user_answers.join(recent_comments, users.Id == recent_comments.UserId, "left").select(users["*"], "q_id", "a_id", recent_comments.Id.alias("c_id"))
-
-    result = user_comments.groupBy("id", "displayname").agg((countDistinct("q_id") + countDistinct("a_id") + countDistinct("c_id")).alias("total"))
-
-    return result.orderBy(result.total.desc()).limit(100).collect()
+    return users \
+        .join(recent_questions, users.Id == recent_questions.OwnerUserId, "left").select(users["*"], recent_questions.Id.alias("q_id")) \
+        .join(recent_answers, users.Id == recent_answers.OwnerUserId, "left").select(users["*"], "q_id", recent_answers.Id.alias("a_id")) \
+        .join(recent_comments, users.Id == recent_comments.UserId, "left").select(users["*"], "q_id", "a_id", recent_comments.Id.alias("c_id")) \
+        .groupBy("Id", "DisplayName").agg((F.countDistinct("q_id") + F.countDistinct("a_id") + F.countDistinct("c_id")).alias("total")) \
+        .orderBy("total", ascending=False).limit(100).collect()
 
 @timeit
 def q1_sql(spark: SparkSession):
@@ -72,48 +72,26 @@ def q1_sql(spark: SparkSession):
     return spark.sql(query).collect()
 
 @timeit
-def q2(votes: DataFrame, votes_types: DataFrame, users: DataFrame, creationDate: Column=None, bucketInterval:int =None) -> List[Row]:
-    return
-
-@timeit
-def q2_sql(spark: SparkSession):
-    query = """
-    WITH buckets AS (
-        SELECT year,
-            generate_series(0, (
-                SELECT cast(max(reputation) as int)
-                FROM users
-                WHERE extract(year FROM creationdate) = year
-            ), 5000) AS reputation_range
-        FROM (
-            SELECT generate_series(2008, extract(year FROM NOW())) AS year
-        ) years
-        GROUP BY 1, 2
-    )
-    SELECT year, reputation_range, count(u.id) total
-    FROM buckets
-    LEFT JOIN (
-        SELECT id, creationdate, reputation
-        FROM users
-        WHERE id in (
-            SELECT a.owneruserid
-            FROM answers a
-            WHERE a.id IN (
-                SELECT postid
-                FROM votes v
-                JOIN votestypes vt ON vt.id = v.votetypeid
-                WHERE vt.name = 'AcceptedByOriginator'
-                    AND v.creationdate >= NOW() - INTERVAL '5 year'
-            )
-        )
-    ) u ON extract(year FROM u.creationdate) = year
-        AND floor(u.reputation / 5000) * 5000 = reputation_range
-    GROUP BY 1, 2
-    ORDER BY 1, 2;
-    """
-    return spark.sql(query).collect()
-
-
+def q2(votes: DataFrame, votes_types: DataFrame, users: DataFrame, answers: DataFrame, creationDate: Column=None, bucketInterval:int =None) -> List[Row]:
+    creationDate = creationDate or (F.now() - F.expr("INTERVAL 5 YEARS"))
+    bucketInterval = bucketInterval or 5000
+    
+    buckets = users.withColumn("year", F.year("CreationDate")) \
+                    .groupBy("year").agg(F.max("Reputation").cast("int").alias("reputation_range")) \
+                    .withColumn("reputation_range", F.explode(F.sequence( F.lit(0), F.col("reputation_range"), F.lit(bucketInterval))))
+    
+    postids = votes.join(votes_types, votes_types.Id == votes.VoteTypeId) \
+                .where((votes_types.Name == "AcceptedByOriginator") & (votes.CreationDate >= creationDate)).select("PostId").distinct()
+                
+    answersids = answers.join(postids, answers.Id == postids.PostId).select("OwnerUserId").distinct()                    
+    users_filtered = users.join(answersids, users.Id == answersids.OwnerUserId).select("Id", "CreationDate", "Reputation").distinct()
+    
+    return buckets \
+        .join(users_filtered, (F.year(users_filtered.CreationDate) == buckets.year) & ((F.floor(users_filtered.Reputation / 5000) * 5000) == buckets.reputation_range), "left") \
+        .groupBy("year", "reputation_range") \
+        .agg(F.count("Id").alias("total")) \
+        .orderBy("year", "reputation_range").collect()
+    
 @timeit
 def q3(tags: DataFrame, questions_tags: DataFrame, questions: DataFrame, answers: DataFrame, inferior_count_limit: int=None) -> List[Row]:
     inferior_count_limit = inferior_count_limit or 10
@@ -173,9 +151,6 @@ def q4_sql(spark: SparkSession):
     """ 
     return spark.sql(query).collect()
 
-def rows_to_tuples(rows):
-    return [tuple(row.asDict().values()) for row in rows]
-
 def main():
     @timeit
     def w1():
@@ -183,10 +158,8 @@ def main():
 
     @timeit
     def w2():
-        votes.createOrReplaceTempView("votes")
-        votes_types.createOrReplaceTempView("votestypes")
-        users.createOrReplaceTempView("users")
-
+        q2(votes, votes_types, users, answers)
+        
     @timeit
     def w3():
         tags.createOrReplaceTempView("tags")
