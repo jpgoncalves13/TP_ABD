@@ -179,30 +179,6 @@ def q4(badges: DataFrame, bucket_size: int=None) -> List[Row]:
 
     return result.collect()
 
-
-@timeit
-def q4_sql(spark: SparkSession):
-
-    query = """
-    SELECT date_bin('1 minute', date, '2008-01-01 00:00:00'), count(*)
-    FROM badges
-    WHERE NOT tagbased
-        AND name NOT IN (
-            'Analytical',
-            'Census',
-            'Documentation Beta',
-            'Documentation Pioneer',
-            'Documentation User',
-            'Reversal',
-            'Tumbleweed'
-        )
-        AND class in (1, 2, 3)
-        AND userid <> -1
-    GROUP BY 1
-    ORDER BY 1;
-    """ 
-    return spark.sql(query).collect()
-
 def main():
 
     def rows_to_tuples(rows):
@@ -236,8 +212,7 @@ def main():
         
     @timeit
     def w4():
-        badges.createOrReplaceTempView("badges")
-        r2 = q4(badges)
+        q4(badges)
 
     if len(sys.argv) < 2:
         print('Missing function name. Usage: python3 main.py <function-name>')
