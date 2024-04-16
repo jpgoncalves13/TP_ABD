@@ -88,7 +88,7 @@ def q2(votes: DataFrame, votes_types: DataFrame, users: DataFrame, answers: Data
     users_filtered = users.join(answersids, users.Id == answersids.OwnerUserId).select("Id", "CreationDate", "Reputation").distinct()
     
     return buckets \
-        .join(users_filtered, (F.year(users_filtered.CreationDate) == buckets.year) & ((F.floor(users_filtered.Reputation / 5000) * 5000) == buckets.reputation_range), "left") \
+        .join(users_filtered, (F.year(users_filtered.CreationDate) == buckets.year) & ((F.floor(users_filtered.Reputation / bucketInterval) * bucketInterval) == buckets.reputation_range), "left") \
         .groupBy("year", "reputation_range") \
         .agg(F.count("Id").alias("total")) \
         .orderBy("year", "reputation_range").collect()
