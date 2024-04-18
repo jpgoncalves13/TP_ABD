@@ -24,14 +24,8 @@ GROUP BY id, displayname
 ORDER BY total DESC
 LIMIT 100;
 
-CREATE INDEX idx_answers ON answers (owneruserid, creationdate);
-CREATE INDEX idx_questions ON questions (owneruserid, creationdate);
-CREATE INDEX idx_comments ON comments (userid, creationdate);
-CREATE INDEX idx_users on users (id);
 
-
--- TABELAS USERS, QUESTIONS, ANSWERS, COMMENTS
-
+------------------------------------------------------------------------------------------------------------------------------
 
 EXPLAIN ANALYZE 
 SELECT u.id,
@@ -59,3 +53,11 @@ LEFT JOIN (
 ORDER BY total DESC
 LIMIT 100;
 
+
+CREATE INDEX idx_answers ON answers (owneruserid, creationdate);
+CREATE INDEX idx_questions ON questions (owneruserid, creationdate);
+CREATE INDEX idx_comments ON comments (userid, creationdate);
+CREATE INDEX idx_users on users (id);
+
+
+-- VISTAS MATERIALIZADAS ??
