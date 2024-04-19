@@ -32,52 +32,56 @@ LEFT JOIN (
 GROUP BY 1, 2
 ORDER BY 1, 2;
 
-------------------------------------------------------------------------------------------------------------------------
 
+-----------------------------------------------------------------------------------------------
+
+
+-- OS BUCKETS POSSIVELMENTE ATÉ PODEM SER UMA VISTA
+-- COALESCE PARA O CASO EM QUE HA UM ANO SEM REPUTAÇÕES
 EXPLAIN ANALYZE 
-WITH years AS (
-    SELECT generate_series(2008, extract(year FROM NOW())) AS year
+WITH buckets AS (
+    SELECT y.year, generate_series(0, COALESCE(m.max_reputation, 0), 5000) AS reputation_range 
+    FROM (SELECT generate_series(2008, extract(year FROM NOW())) AS year) AS y
+    JOIN max_reputation_per_year m ON m.year = y.year
 ),
-max_reputation AS (
-    SELECT extract(year FROM creationdate) AS year, max(reputation) as max_rep
+users_reputation AS (
+    SELECT id, extract(year FROM creationdate) AS year, floor(reputation / 5000) * 5000 AS reputation_interval
     FROM users
-    GROUP BY extract(year FROM creationdate)
-),
-buckets AS (
-    SELECT y.year, generate_series(0, COALESCE(mr.max_rep, 0), 5000) AS reputation_range
-    FROM years y
-    LEFT JOIN max_reputation mr ON y.year = mr.year
-),
-recent_accepted_answers AS (
-    SELECT a.owneruserid
-    FROM answers a
-    JOIN votes v ON a.id = v.postid
-    JOIN votestypes vt ON vt.id = v.votetypeid
-    WHERE vt.name = 'AcceptedByOriginator' AND v.creationdate >= NOW() - INTERVAL '5 year'
-    GROUP BY a.owneruserid
-),
-filtered_users AS (
-    SELECT id, extract(year FROM creationdate) AS year, floor(reputation / 5000) * 5000 AS rep_range
-    FROM users
-    WHERE id IN (SELECT owneruserid FROM recent_accepted_answers)
+    WHERE id in (
+        SELECT a.owneruserid
+        FROM answers a
+        JOIN votes v ON v.postid = a.id
+        JOIN votestypes vt ON vt.id = v.votetypeid
+        WHERE vt.name = 'AcceptedByOriginator' AND v.creationdate >= NOW() - INTERVAL '5 year'
+    )
 )
-SELECT b.year, b.reputation_range, count(fu.id) as total
+SELECT b.year, b.reputation_range, count(ur.id) AS total
 FROM buckets b
-LEFT JOIN filtered_users fu ON fu.year = b.year AND fu.rep_range = b.reputation_range
+LEFT JOIN users_reputation ur ON ur.year = b.year AND ur.reputation_interval = b.reputation_range
 GROUP BY 1, 2
 ORDER BY 1, 2;
 
 
-CREATE INDEX idx_users_creationdate ON users (date_trunc('year', creationdate));
-CREATE INDEX idx_users_id ON users (id);
-CREATE INDEX idx_users_reputation_creationdate ON users (reputation, date_trunc('year', creationdate));
+-- CRIAR VISTA MATEARILIZADA PARA TER O MAXIMO DE REPUTAÇÃO POR ANO
+CREATE MATERIALIZED VIEW max_reputation_per_year AS
+SELECT extract(year FROM creationdate) AS year, MAX(reputation) AS max_reputation
+FROM users
+GROUP BY extract(year FROM creationdate);
 
 
-CREATE INDEX idx_answers_owneruserid ON answers (owneruserid);
-CREATE INDEX idx_answers_id ON answers (id);
+CREATE INDEX idx_max_reputation_per_year_on_year ON max_reputation_per_year(year);
 
+CREATE INDEX idx_users_id ON users(id);
+CREATE INDEX idx_users_creationdate ON users(creationdate);
+CREATE INDEX idx_users_reputation ON users(reputation);
 
-CREATE INDEX idx_votes_postid_votetypeid ON votes (postid, votetypeid);
-CREATE INDEX idx_votes_creationdate ON votes (creationdate);
+CREATE INDEX idx_answers_id ON answers(id);
+CREATE INDEX idx_answers_owneruserid ON answers(owneruserid);
 
-CREATE INDEX idx_votestypes_name ON votestypes (name);
+CREATE INDEX idx_votes_postid ON votes(postid);
+CREATE INDEX idx_votes_creationdate ON votes(creationdate);
+CREATE INDEX idx_votes_votetypeid ON votes(votetypeid);
+
+CREATE INDEX idx_votestypes_id ON votestypes(id);
+CREATE INDEX idx_votestypes_name ON votestypes(name);
+
