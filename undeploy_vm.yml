@@ -1,0 +1,23 @@
+---
+- name: Delete GCP VM instance with Spot option
+  hosts: localhost
+  gather_facts: no
+  vars:
+    gcp_project: abdtp-421121
+    gcp_cred_file: abdtp-421121-f3eb9e073ec5.json
+    gcp_zone: us-east1-b
+
+  tasks:
+    - name: Delete the GCP VM
+      google.cloud.gcp_compute_instance:
+        state: absent  # This state ensures that the VM instance is deleted
+        name: "abd-vm-spot"
+        zone: "{{ gcp_zone }}"
+        project: "{{ gcp_project }}"
+        auth_kind: serviceaccount
+        service_account_file: "{{ gcp_cred_file }}"
+      register: result
+
+    - name: Output deletion result
+      debug:
+        msg: "VM deletion status: {{ result.state }}"
