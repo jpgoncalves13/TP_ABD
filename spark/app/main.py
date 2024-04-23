@@ -8,6 +8,9 @@ from pprint import pprint
 from pyspark.sql.types import StringType
 import time
 import sys
+from pyspark.sql import DataFrame
+from pyspark.sql.functions import col, window, count
+from pyspark.sql.types import Row
 
 # utility to measure the runtime of some function
 def timeit(f):
@@ -150,43 +153,8 @@ def q3_sql(spark: SparkSession):
     """
     return spark.sql(query).collect()
 
-from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, window, count
-from pyspark.sql.types import Row
-from typing import List
-
 @timeit
 def q4(badges: DataFrame, bucket_size: int=None) -> List[Row]:
-
-    bucket_size = bucket_size or 1
-
-    bucket_interval = f"{bucket_size} minutes"
-
-    # Filter and process the DataFrame according to specified conditions
-    result = badges \
-        .filter(
-            (col('tagbased') == False) & 
-            (col('name').isin(
-                'Analytical',
-                'Census',
-                'Documentation Beta',
-                'Documentation Pioneer',
-                'Documentation User',
-                'Reversal',
-                'Tumbleweed'
-            ) == False) &
-            (col('class').isin(1, 2, 3)) &
-            (col('userid') != -1)
-        ) \
-        .groupBy(window(col('date'), bucket_interval)) \
-        .agg(count('*').alias('count')) \
-        .orderBy('window')
-
-    # Collect the results to a list of Rows
-    return result.collect()
-
-@timeit
-def q4_optimized(badges: DataFrame, bucket_size: int=None) -> DataFrame:
     bucket_size = bucket_size or 1
     bucket_interval = f"{bucket_size} minutes"
 
@@ -273,7 +241,7 @@ def main():
     def w4():
 
         badges.createOrReplaceTempView("badges")
-        q4_optimized(badges)
+        q4(badges)
 
 
     if len(sys.argv) < 2:
