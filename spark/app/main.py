@@ -150,34 +150,93 @@ def q3_sql(spark: SparkSession):
     """
     return spark.sql(query).collect()
 
+from pyspark.sql import DataFrame
+from pyspark.sql.functions import col, window, count
+from pyspark.sql.types import Row
+from typing import List
+
 @timeit
 def q4(badges: DataFrame, bucket_size: int=None) -> List[Row]:
 
     bucket_size = bucket_size or 1
 
-    #Convert the integer bucket_size to a string representing the duration, e.g., "1 minute" or "5 minutes"
-    bucket_size_str = f"{bucket_size} minutes"
+    bucket_interval = f"{bucket_size} minutes"
 
-    # Filter the DataFrame according to the specified conditions
-    filtered_badges = badges.filter(
-        (badges['TagBased'] == False) &
-        (~badges['Name'].isin(
-            'Analytical', 'Census', 'Documentation Beta', 'Documentation Pioneer',
-            'Documentation User', 'Reversal', 'Tumbleweed'
-        )) &
-        (badges['class'].isin(1, 2, 3)) &
-        (badges['UserId'] != -1)
-    )
+    # Filter and process the DataFrame according to specified conditions
+    result = badges \
+        .filter(
+            (col('tagbased') == False) & 
+            (col('name').isin(
+                'Analytical',
+                'Census',
+                'Documentation Beta',
+                'Documentation Pioneer',
+                'Documentation User',
+                'Reversal',
+                'Tumbleweed'
+            ) == False) &
+            (col('class').isin(1, 2, 3)) &
+            (col('userid') != -1)
+        ) \
+        .groupBy(window(col('date'), bucket_interval)) \
+        .agg(count('*').alias('count')) \
+        .orderBy('window')
 
-    # Group by the time buckets using window function and count the occurrences
-    result = filtered_badges.groupBy(
-        F.window(F.col('Date'), bucket_size_str)
-    ).count()
-
-    # Order the result by the start time of the window
-    result = result.orderBy(F.col('window').start)
-
+    # Collect the results to a list of Rows
     return result.collect()
+
+@timeit
+def q4_optimized(badges: DataFrame, bucket_size: int=None) -> DataFrame:
+    bucket_size = bucket_size or 1
+    bucket_interval = f"{bucket_size} minutes"
+
+    filtered_badges = badges \
+        .filter(
+            (col('tagbased') == False) & 
+            (col('name').isin(
+                'Analytical',
+                'Census',
+                'Documentation Beta',
+                'Documentation Pioneer',
+                'Documentation User',
+                'Reversal',
+                'Tumbleweed'
+            ) == False) &
+            (col('class').isin(1, 2, 3)) &
+            (col('userid') != -1)
+        )
+
+    filtered_badges.cache()
+
+    result = filtered_badges \
+        .groupBy(window(col('date'), bucket_interval)) \
+        .agg(count('*').alias('count')) \
+        .orderBy('window')
+
+    return result  
+
+@timeit
+def q4_sql(spark: SparkSession):
+    query = """
+    SELECT date_bin('1 minute', date, '2008-01-01 00:00:00'), count(*)
+    FROM badges
+    WHERE NOT tagbased
+        AND name NOT IN (
+            'Analytical',
+            'Census',
+            'Documentation Beta',
+            'Documentation Pioneer',
+            'Documentation User',
+            'Reversal',
+            'Tumbleweed'
+        )
+        AND class in (1, 2, 3)
+        AND userid <> -1
+    GROUP BY 1
+    ORDER BY 1;"""
+    return spark.sql(query).collect()
+
+@timeit
 
 def main():
 
@@ -212,7 +271,10 @@ def main():
         
     @timeit
     def w4():
-        q4(badges)
+
+        badges.createOrReplaceTempView("badges")
+        q4_optimized(badges)
+
 
     if len(sys.argv) < 2:
         print('Missing function name. Usage: python3 main.py <function-name>')
