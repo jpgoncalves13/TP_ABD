@@ -1,17 +1,17 @@
----
-- name: Create GCP VM instance with Spot option
+- name: Create GCP VM instance with Spot option and generate host inventory
   hosts: localhost
   gather_facts: no
   vars:
     gcp_project: abdtp-421121
-    gcp_cred_file: abdtp-421121-f3eb9e073ec5.json
+    gcp_cred_file: ascn-grupo39-key.json
     gcp_zone: us-east1-b
+    inventory_template: host_template.j2
 
   tasks:
     - name: Create a GCP VM
       google.cloud.gcp_compute_instance:
         state: present
-        name: "abd-vm-spot"
+        name: "abd-vm-spot-miguel"
         machine_type: "n2-standard-8"
         disks:
           - auto_delete: true
@@ -37,3 +37,37 @@
     - name: Output VM info
       debug:
         msg: "VM created with IP: {{ gcp_vm.networkInterfaces[0].accessConfigs[0].natIP }}"
+      when: gcp_vm is defined  # Only display when IP is available
+
+    - name: Generate host inventory file
+      template:
+        src: "{{ inventory_template }}"
+        dest: hosts.inv
+      delegate_to: localhost
+      when: gcp_vm is defined  # Only generate inventory when IP is available
+
+- name: Example Playbook
+  hosts: my_vm  # Replace with the hostname or IP address of your remote machine
+  become: yes  # Enable privilege escalation, if necessary
+  tasks:
+    - name: Ensure Postgres is installed
+      apt:
+        name: postgresql
+        state: present
+
+    - name: Ensure Postgres is running
+      service:
+        name: postgresql
+        state: started
+        enabled: yes
+
+    - name: Install Git
+      apt:
+        name: git
+        state: present
+    
+    - name: Clone Git repository using SSH key authentication
+      git:
+        repo: "git@github.com:jpgoncalves13/TP_ABD.git"  # SSH URL of the repository
+        dest: "/home/miguel/TP_ABD"
+
