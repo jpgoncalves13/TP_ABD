@@ -35,8 +35,6 @@ ORDER BY 1, 2;
 
 -----------------------------------------------------------------------------------------------
 
-
--- OS BUCKETS POSSIVELMENTE ATÉ PODEM SER UMA VISTA
 -- COALESCE PARA O CASO EM QUE HA UM ANO SEM REPUTAÇÕES
 EXPLAIN ANALYZE 
 WITH buckets AS (
@@ -45,7 +43,7 @@ WITH buckets AS (
     JOIN max_reputation_per_year m ON m.year = y.year
 ),
 users_reputation AS (
-    SELECT id, extract(year FROM creationdate) AS year, floor(reputation / 5000) * 5000 AS reputation_interval
+    SELECT id, EXTRACT(year FROM creationdate) AS year, FLOOR(reputation / 5000) * 5000 AS reputation_interval
     FROM users
     WHERE id in (
         SELECT a.owneruserid
@@ -55,7 +53,7 @@ users_reputation AS (
         WHERE vt.name = 'AcceptedByOriginator' AND v.creationdate >= NOW() - INTERVAL '5 year'
     )
 )
-SELECT b.year, b.reputation_range, count(ur.id) AS total
+SELECT b.year, b.reputation_range, COUNT(ur.id) AS total
 FROM buckets b
 LEFT JOIN users_reputation ur ON ur.year = b.year AND ur.reputation_interval = b.reputation_range
 GROUP BY 1, 2
@@ -84,4 +82,5 @@ CREATE INDEX idx_votes_votetypeid ON votes(votetypeid);
 
 CREATE INDEX idx_votestypes_id ON votestypes(id);
 CREATE INDEX idx_votestypes_name ON votestypes(name);
+
 
