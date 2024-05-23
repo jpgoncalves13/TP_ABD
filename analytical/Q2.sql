@@ -1,3 +1,15 @@
+VERIFICAR RESULTADOSVERIFICAR RESULTADOSVERIFICAR RESULTADOS
+VERIFICAR RESULTADOS
+VERIFICAR RESULTADOS
+
+VERIFICAR RESULTADOS
+VERIFICAR RESULTADOS
+VERIFICAR RESULTADOS
+
+VERIFICAR RESULTADOS
+VERIFICAR RESULTADOS
+VERIFICAR RESULTADOS
+
 EXPLAIN ANALYZE 
 WITH buckets AS (
     SELECT year,
@@ -70,11 +82,8 @@ GROUP BY extract(year FROM creationdate);
 CREATE INDEX idx_max_reputation_per_year_on_year ON max_reputation_per_year(year);
 
 CREATE INDEX idx_users_id ON users(id);
-CREATE INDEX idx_users_creationdate ON users(creationdate);
-CREATE INDEX idx_users_reputation ON users(reputation);
 
 CREATE INDEX idx_answers_id ON answers(id);
-CREATE INDEX idx_answers_owneruserid ON answers(owneruserid);
 
 CREATE INDEX idx_votes_postid ON votes(postid);
 CREATE INDEX idx_votes_creationdate ON votes(creationdate);
@@ -82,5 +91,4 @@ CREATE INDEX idx_votes_votetypeid ON votes(votetypeid);
 
 CREATE INDEX idx_votestypes_id ON votestypes(id);
 CREATE INDEX idx_votestypes_name ON votestypes(name);
-
 
